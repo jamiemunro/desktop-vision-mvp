@@ -1,0 +1,31 @@
+{
+  "name": "desktop-vision-mvp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron ./app/main.js",
+    "start:all": "npm-run-all -p start backend asr",
+    "backend": "node backend/server.js",
+    "asr": "bash -lc 'cd asr && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py'",
+    "mcp:adapter": "node ./mcp-adapter/server.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "electron": "^37.2.6",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "npm-run-all": "^4.1.5",
+    "sharp": "^0.33.4",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "type": "commonjs"
+}

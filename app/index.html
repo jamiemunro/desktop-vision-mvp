@@ -1,0 +1,46 @@
+<!doctype html><html><body style="font:14px sans-serif">
+<button id="start">Start Capture</button>
+<button id="stop" disabled>Stop Capture</button>
+<button id="bookmark">Bookmark</button>
+<div id="status"></div>
+<video id="v" autoplay muted playsinline style="max-width:100%"></video>
+<script>
+const v = document.getElementById('v'); const status = document.getElementById('status');
+let captureInterval = null;
+async function start() {
+  const sources = await window.api.getSources();
+  const sourceId = sources[0].id;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ mandatory:{ chromeMediaSource:'desktop', chromeMediaSourceId: sourceId } } });
+  v.srcObject = stream;
+  const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+  captureInterval = setInterval(() => {
+    if (!v.videoWidth) return;
+    canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+    ctx.drawImage(v,0,0);
+    canvas.toBlob(async (blob)=> {
+      const arr = new Uint8Array(await blob.arrayBuffer());
+      window.api.sendFrame({ timestamp: Date.now(), jpgBuffer: arr });
+      status.textContent = `Last frame: ${new Date().toLocaleTimeString()}`;
+    }, 'image/jpeg', 0.6);
+  }, 500); // ~2 fps
+  document.getElementById('start').disabled = true;
+  document.getElementById('stop').disabled = false;
+}
+function stop() {
+  if (captureInterval) {
+    clearInterval(captureInterval);
+    captureInterval = null;
+  }
+  if (v.srcObject) {
+    v.srcObject.getTracks().forEach(track => track.stop());
+    v.srcObject = null;
+  }
+  document.getElementById('start').disabled = false;
+  document.getElementById('stop').disabled = true;
+  status.textContent = 'Capture stopped';
+}
+document.getElementById('start').onclick = start;
+document.getElementById('stop').onclick = stop;
+document.getElementById('bookmark').onclick = ()=> window.api.bookmark(prompt('Label?')||'Bookmark');
+</script>
+</body></html>
