@@ -34,19 +34,31 @@ ipcMain.handle('start-audio', async () => {
   if (asrProcess) return { success: false, message: 'Audio recording already running' };
   
   try {
-    // Start ASR Python server
+    // Start ASR Python server with process group management
     asrProcess = spawn('bash', ['-lc', `cd ${path.join(__dirname, '..', 'asr')} && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py`], {
       stdio: 'pipe',
       cwd: path.join(__dirname, '..'),
-      detached: false
+      detached: true,  // Create new process group
+      killSignal: 'SIGTERM'
     });
     
-    // Start backend server
+    // Ensure we can still track the process
+    if (asrProcess.pid) {
+      asrProcess.unref(); // Don't keep the event loop alive
+    }
+    
+    // Start backend server with process group management
     backendProcess = spawn('node', ['backend/server.js'], {
       stdio: 'pipe', 
       cwd: path.join(__dirname, '..'),
-      detached: false
+      detached: true,  // Create new process group
+      killSignal: 'SIGTERM'
     });
+    
+    // Ensure we can still track the process
+    if (backendProcess.pid) {
+      backendProcess.unref(); // Don't keep the event loop alive
+    }
     
     asrProcess.on('error', (err) => console.error('ASR process error:', err));
     backendProcess.on('error', (err) => console.error('Backend process error:', err));
@@ -62,11 +74,21 @@ ipcMain.handle('stop-audio', async () => {
   
   try {
     if (asrProcess) {
-      asrProcess.kill('SIGTERM');
+      // Kill the entire process group to ensure child processes are terminated
+      try {
+        process.kill(-asrProcess.pid, 'SIGTERM');
+      } catch (e) {
+        // Fallback to killing just the main process
+        asrProcess.kill('SIGTERM');
+      }
       asrProcess = null;
     }
     if (backendProcess) {
-      backendProcess.kill('SIGTERM');
+      try {
+        process.kill(-backendProcess.pid, 'SIGTERM');
+      } catch (e) {
+        backendProcess.kill('SIGTERM');
+      }
       backendProcess = null;
     }
     return { success: true, message: 'Audio recording stopped' };
@@ -116,12 +138,40 @@ ipcMain.handle('archive-sessions', async () => {
 
 // Cleanup on app quit
 app.on('before-quit', () => {
+  console.log('App quitting - cleaning up processes...');
   if (asrProcess) {
-    asrProcess.kill('SIGTERM');
+    console.log('Terminating ASR process:', asrProcess.pid);
+    try {
+      process.kill(-asrProcess.pid, 'SIGTERM');
+    } catch (e) {
+      console.log('Fallback kill for ASR process');
+      asrProcess.kill('SIGTERM');
+    }
     asrProcess = null;
   }
   if (backendProcess) {
-    backendProcess.kill('SIGTERM');
+    console.log('Terminating backend process:', backendProcess.pid);
+    try {
+      process.kill(-backendProcess.pid, 'SIGTERM');
+    } catch (e) {
+      console.log('Fallback kill for backend process');
+      backendProcess.kill('SIGTERM');
+    }
     backendProcess = null;
   }
+});
+
+// Additional cleanup handlers
+app.on('window-all-closed', () => {
+  console.log('All windows closed - ensuring process cleanup');
+  // Force cleanup of any remaining processes
+  if (asrProcess) {
+    try { process.kill(-asrProcess.pid, 'SIGKILL'); } catch (e) {}
+    asrProcess = null;
+  }
+  if (backendProcess) {
+    try { process.kill(-backendProcess.pid, 'SIGKILL'); } catch (e) {}
+    backendProcess = null;
+  }
+  app.quit();
 });
