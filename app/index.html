@@ -2,6 +2,7 @@
 <button id="start">Start Audio/Video Capture</button>
 <button id="stop" disabled>Stop Audio/Video Capture</button>
 <button id="bookmark">Bookmark</button>
+<button id="archive">Archive Old Sessions</button>
 <div id="status"></div>
 <video id="v" autoplay muted playsinline style="max-width:100%"></video>
 <script>
@@ -79,5 +80,10 @@ async function stop() {
 document.getElementById('start').onclick = start;
 document.getElementById('stop').onclick = stop;
 document.getElementById('bookmark').onclick = ()=> window.api.bookmark(prompt('Label?')||'Bookmark');
+document.getElementById('archive').onclick = async () => {
+  status.textContent = 'Checking sessions for archiving...';
+  const result = await window.api.archiveSessions();
+  status.textContent = result.success ? 'Archiving started (check console)' : `Archive failed: ${result.message}`;
+};
 </script>
 </body></html>

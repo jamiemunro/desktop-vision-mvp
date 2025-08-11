@@ -75,6 +75,45 @@ ipcMain.handle('stop-audio', async () => {
   }
 });
 
+// Session archiving function
+function runArchiving() {
+  const archiveScript = path.join(__dirname, '..', 'scripts', 'archive-sessions.js');
+  const archiveProcess = spawn('node', [archiveScript], {
+    stdio: 'inherit',
+    cwd: path.join(__dirname, '..')
+  });
+  
+  archiveProcess.on('error', (err) => {
+    console.error('Archive process error:', err);
+  });
+  
+  archiveProcess.on('close', (code) => {
+    console.log(`Archive process completed with code ${code}`);
+  });
+}
+
+// Run archiving on app startup (non-blocking)
+setTimeout(() => {
+  console.log('Running session archiving check...');
+  runArchiving();
+}, 5000); // Wait 5 seconds after app starts
+
+// Run archiving periodically (every 6 hours)
+setInterval(() => {
+  console.log('Running periodic session archiving...');
+  runArchiving();
+}, 6 * 60 * 60 * 1000); // 6 hours
+
+// Session archiving IPC handler
+ipcMain.handle('archive-sessions', async () => {
+  try {
+    runArchiving();
+    return { success: true, message: 'Archiving process started' };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+});
+
 // Cleanup on app quit
 app.on('before-quit', () => {
   if (asrProcess) {

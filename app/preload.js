@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('api', {
   bookmark: (label)=> ipcRenderer.send('bookmark', label),
   startAudio: ()=> ipcRenderer.invoke('start-audio'),
   stopAudio: ()=> ipcRenderer.invoke('stop-audio'),
+  archiveSessions: ()=> ipcRenderer.invoke('archive-sessions'),
 });

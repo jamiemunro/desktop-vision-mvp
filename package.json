@@ -9,6 +9,7 @@
     "backend": "node backend/server.js",
     "asr": "bash -lc 'cd asr && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py'",
     "mcp:adapter": "node ./mcp-adapter/server.mjs",
+    "archive": "node scripts/archive-sessions.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
