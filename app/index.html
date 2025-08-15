@@ -206,19 +206,30 @@ async function stopVision() {
 
 async function startAudio() {
   try {
-    const result = await window.api.startAudio();
-    console.log('Audio started:', result);
+    // First ensure ASR process is running
+    await window.api.startAudio();
+    
+    // Then call the ASR HTTP endpoint to start recording
+    const response = await fetch('http://localhost:6061/start', { method: 'POST' });
+    const result = await response.json();
+    console.log('Audio recording started:', result);
+    return result;
   } catch (error) {
     console.error('Audio start error:', error);
+    throw error;
   }
 }
 
 async function stopAudio() {
   try {
-    const result = await window.api.stopAudio();
-    console.log('Audio stopped:', result);
+    // Call the ASR HTTP endpoint to stop recording
+    const response = await fetch('http://localhost:6061/stop', { method: 'POST' });
+    const result = await response.json();
+    console.log('Audio recording stopped:', result);
+    return result;
   } catch (error) {
     console.error('Audio stop error:', error);
+    throw error;
   }
 }
 

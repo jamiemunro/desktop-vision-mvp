@@ -38,12 +38,13 @@ ipcMain.handle('start-audio', async () => {
   if (asrProcess) return { success: false, message: 'Audio recording already running' };
   
   try {
-    // Start ASR Python server with process group management
+    // Start ASR Python server with session directory passed as environment variable
     asrProcess = spawn('bash', ['-lc', `cd ${path.join(__dirname, '..', 'asr')} && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py`], {
       stdio: 'pipe',
       cwd: path.join(__dirname, '..'),
       detached: true,  // Create new process group
-      killSignal: 'SIGTERM'
+      killSignal: 'SIGTERM',
+      env: { ...process.env, SESSION_DIR: sessionDir }
     });
     
     // Ensure we can still track the process
