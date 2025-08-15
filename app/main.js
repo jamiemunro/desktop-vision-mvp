@@ -12,7 +12,11 @@ function appendEvent(o){ fs.appendFileSync(eventsPath, JSON.stringify(o)+"\n"); 
 let asrProcess = null;
 let backendProcess = null;
 async function createWindow() {
-  const win = new BrowserWindow({ width: 900, height: 700, webPreferences: { preload: path.join(__dirname, 'preload.js') } });
+  const win = new BrowserWindow({ 
+    width: 1400, 
+    height: 1000,
+    webPreferences: { preload: path.join(__dirname, 'preload.js') } 
+  });
   await win.loadFile('index.html');
   win.webContents.openDevTools({ mode: 'undocked' });
 }

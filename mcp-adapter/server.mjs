@@ -18,6 +18,7 @@ function getLatestSessionDir() {
   if (!fs.existsSync(SESSIONS_DIR)) throw new Error(`SESSIONS_DIR not found: ${SESSIONS_DIR}`);
   const dirs = fs
     .readdirSync(SESSIONS_DIR)
+    .filter((d) => d !== 'archived')
     .map((d) => path.join(SESSIONS_DIR, d))
     .filter((p) => fs.existsSync(p) && fs.statSync(p).isDirectory())
     .sort();
@@ -134,6 +135,71 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             quality: { type: 'number', default: 60 },
           },
         },
+      },
+      {
+        name: 'start_vision',
+        description: 'Start desktop vision capture (screen recording).',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'stop_vision',
+        description: 'Stop desktop vision capture (screen recording).',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'start_audio',
+        description: 'Start audio recording and ASR (speech recognition).',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'stop_audio',
+        description: 'Stop audio recording and ASR (speech recognition).',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'get_status',
+        description: 'Get current status of vision and audio capture services.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'watch_screen_live',
+        description: 'Get the current screen content in real-time. Perfect for responding to "are you seeing this?" questions.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'listen_live',
+        description: 'Get recent audio transcriptions from live speech recognition.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            seconds: { type: 'number', description: 'Get speech from last N seconds', default: 10 },
+          },
+        },
+      },
+      {
+        name: 'watch_and_listen',
+        description: 'Get both current screen content and recent speech in one call - ideal for comprehensive live monitoring.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            speech_seconds: { type: 'number', description: 'Get speech from last N seconds', default: 5 },
+          },
+        },
+      },
+      {
+        name: 'start_recording_session',
+        description: 'Start a new recording session with both vision and audio capture.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'stop_recording_session',
+        description: 'Stop the current recording session.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'create_new_session',
+        description: 'Create a new session directory for recording.',
+        inputSchema: { type: 'object', properties: {} },
       },
     ],
   };
@@ -300,6 +366,299 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         { type: 'text', text: JSON.stringify({ ok: true, t: ts, label }) },
       ],
     };
+  }
+
+  if (name === 'start_vision') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/control/vision/start`, { method: 'POST' });
+      const result = await response.json();
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to start vision: ${error.message}`);
+    }
+  }
+
+  if (name === 'stop_vision') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/control/vision/stop`, { method: 'POST' });
+      const result = await response.json();
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to stop vision: ${error.message}`);
+    }
+  }
+
+  if (name === 'start_audio') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/control/audio/start`, { method: 'POST' });
+      const result = await response.json();
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to start audio: ${error.message}`);
+    }
+  }
+
+  if (name === 'stop_audio') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/control/audio/stop`, { method: 'POST' });
+      const result = await response.json();
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to stop audio: ${error.message}`);
+    }
+  }
+
+  if (name === 'get_status') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/status`);
+      const result = await response.json();
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to get status: ${error.message}`);
+    }
+  }
+
+  if (name === 'watch_screen_live') {
+    // Get the latest frame directly for immediate response
+    try {
+      const framesDir = getFramesDir();
+      if (!fs.existsSync(framesDir)) throw new Error('No frames directory found');
+      
+      const frames = fs.readdirSync(framesDir)
+        .filter(f => f.endsWith('.jpg'))
+        .sort()
+        .slice(-1);
+      
+      if (frames.length === 0) throw new Error('No frames available');
+      
+      const latestFrame = frames[0];
+      const frameId = latestFrame.replace('.jpg', '');
+      const framePath = path.join(framesDir, latestFrame);
+      const b64 = await toBase64(framePath);
+      
+      return {
+        content: [
+          { type: 'text', text: `Current screen (frame ${frameId}):` },
+          { type: 'image', data: b64, mimeType: 'image/jpeg' },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to get live screen: ${error.message}`);
+    }
+  }
+
+  if (name === 'listen_live') {
+    const seconds = Number(args?.seconds ?? 10);
+    const cutoffTime = Date.now() - (seconds * 1000);
+    
+    try {
+      const eventsPath = getEventsPath();
+      if (!fs.existsSync(eventsPath)) throw new Error('No events file found');
+      
+      const content = fs.readFileSync(eventsPath, 'utf8');
+      const recentSpeech = [];
+      
+      for (const line of content.trim().split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event.etype === 'speech.final' && event.text && event.t >= cutoffTime) {
+            recentSpeech.push({
+              timestamp: new Date(event.t).toISOString(),
+              text: event.text
+            });
+          }
+        } catch (e) {}
+      }
+      
+      const summary = recentSpeech.length > 0 
+        ? `Recent speech (last ${seconds}s):\n${recentSpeech.map(s => `${s.timestamp}: "${s.text}"`).join('\n')}`
+        : `No speech detected in the last ${seconds} seconds`;
+      
+      return {
+        content: [
+          { type: 'text', text: summary },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to get live audio: ${error.message}`);
+    }
+  }
+
+  if (name === 'watch_and_listen') {
+    const speechSeconds = Number(args?.speech_seconds ?? 5);
+    const cutoffTime = Date.now() - (speechSeconds * 1000);
+    
+    try {
+      // Get current screen
+      const framesDir = getFramesDir();
+      let screenContent = null;
+      
+      if (fs.existsSync(framesDir)) {
+        const frames = fs.readdirSync(framesDir)
+          .filter(f => f.endsWith('.jpg'))
+          .sort()
+          .slice(-1);
+        
+        if (frames.length > 0) {
+          const latestFrame = frames[0];
+          const frameId = latestFrame.replace('.jpg', '');
+          const framePath = path.join(framesDir, latestFrame);
+          const b64 = await toBase64(framePath);
+          
+          screenContent = {
+            frameId,
+            image: { type: 'image', data: b64, mimeType: 'image/jpeg' }
+          };
+        }
+      }
+      
+      // Get recent speech
+      const eventsPath = getEventsPath();
+      const recentSpeech = [];
+      
+      if (fs.existsSync(eventsPath)) {
+        const content = fs.readFileSync(eventsPath, 'utf8');
+        
+        for (const line of content.trim().split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.etype === 'speech.final' && event.text && event.t >= cutoffTime) {
+              recentSpeech.push({
+                timestamp: new Date(event.t).toISOString(),
+                text: event.text
+              });
+            }
+          } catch (e) {}
+        }
+      }
+      
+      let textContent = `Live monitoring update:\n\nSCREEN: Currently showing frame ${screenContent?.frameId || 'none'}\n\n`;
+      
+      if (recentSpeech.length > 0) {
+        textContent += `AUDIO (last ${speechSeconds}s):\n${recentSpeech.map(s => `${s.timestamp}: "${s.text}"`).join('\n')}`;
+      } else {
+        textContent += `AUDIO: No speech detected in the last ${speechSeconds} seconds`;
+      }
+      
+      const responseContent = [{ type: 'text', text: textContent }];
+      
+      if (screenContent?.image) {
+        responseContent.push(screenContent.image);
+      }
+      
+      return { content: responseContent };
+      
+    } catch (error) {
+      throw new Error(`Failed to get live monitoring: ${error.message}`);
+    }
+  }
+
+  if (name === 'start_recording_session') {
+    try {
+      // Create new session first
+      const createResponse = await fetch(`${TRACKER_BASE_URL}/control/session/create`, { method: 'POST' });
+      if (!createResponse.ok) {
+        throw new Error(`Failed to create session: ${createResponse.statusText}`);
+      }
+      const createResult = await createResponse.json();
+      
+      // Start both vision and audio
+      const [visionResponse, audioResponse] = await Promise.all([
+        fetch(`${TRACKER_BASE_URL}/control/vision/start`, { method: 'POST' }),
+        fetch(`${TRACKER_BASE_URL}/control/audio/start`, { method: 'POST' })
+      ]);
+      
+      const [visionResult, audioResult] = await Promise.all([
+        visionResponse.json(),
+        audioResponse.json()
+      ]);
+      
+      const result = {
+        success: visionResult.success && audioResult.success,
+        message: `Recording session started - Vision: ${visionResult.success ? 'started' : 'failed'}, Audio: ${audioResult.success ? 'started' : 'failed'}`,
+        session: createResult.session,
+        vision: visionResult,
+        audio: audioResult
+      };
+      
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to start recording session: ${error.message}`);
+    }
+  }
+
+  if (name === 'stop_recording_session') {
+    try {
+      // Stop both vision and audio
+      const [visionResponse, audioResponse] = await Promise.all([
+        fetch(`${TRACKER_BASE_URL}/control/vision/stop`, { method: 'POST' }),
+        fetch(`${TRACKER_BASE_URL}/control/audio/stop`, { method: 'POST' })
+      ]);
+      
+      const [visionResult, audioResult] = await Promise.all([
+        visionResponse.json(),
+        audioResponse.json()
+      ]);
+      
+      const result = {
+        success: true,
+        message: `Recording session stopped - Vision: ${visionResult.success ? 'stopped' : 'already stopped'}, Audio: ${audioResult.success ? 'stopped' : 'already stopped'}`,
+        vision: visionResult,
+        audio: audioResult
+      };
+      
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to stop recording session: ${error.message}`);
+    }
+  }
+
+  if (name === 'create_new_session') {
+    try {
+      const response = await fetch(`${TRACKER_BASE_URL}/control/session/create`, { method: 'POST' });
+      if (!response.ok) {
+        throw new Error(`Failed to create session: ${response.statusText}`);
+      }
+      const result = await response.json();
+      
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to create new session: ${error.message}`);
+    }
   }
 
   throw new Error(`Unknown tool: ${name}`);

@@ -1,7 +1,7 @@
 {
   "name": "desktop-vision-mvp",
   "version": "1.0.0",
-  "description": "",
+  "description": "Desktop vision prototype for screen capture and voice recording with Claude integration",
   "main": "index.js",
   "scripts": {
     "start": "electron ./app/main.js",
@@ -10,23 +10,38 @@
     "asr": "bash -lc 'cd asr && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py'",
     "mcp:adapter": "node ./mcp-adapter/server.mjs",
     "archive": "node scripts/archive-sessions.js",
+    "correlate": "node scripts/correlate-timeline.js",
+    "enhance": "node scripts/enhance-metadata.js",
+    "process-session": "npm run correlate && npm run enhance",
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "ui": "npm run build && npm run backend",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^16.0.1",
     "better-sqlite3": "^12.2.0",
     "electron": "^37.2.6",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "node-pty": "^1.0.0",
     "npm-run-all": "^4.1.5",
+    "rollup": "^2.79.2",
+    "rollup-plugin-css-only": "^4.5.2",
+    "rollup-plugin-svelte": "^7.2.2",
+    "rollup-plugin-terser": "^7.0.2",
     "sharp": "^0.33.4",
-    "ws": "^8.18.3"
+    "svelte": "^5.38.1",
+    "ws": "^8.18.3",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.2.0",
-    "electron-builder": "^26.0.12"
+    "@modelcontextprotocol/sdk": "^1.2.0"
   },
   "type": "commonjs"
 }

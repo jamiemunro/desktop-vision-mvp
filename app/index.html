@@ -1,89 +1,239 @@
-<!doctype html><html><body style="font:14px sans-serif">
-<button id="start">Start Audio/Video Capture</button>
-<button id="stop" disabled>Stop Audio/Video Capture</button>
-<button id="bookmark">Bookmark</button>
-<button id="archive">Archive Old Sessions</button>
-<div id="status"></div>
-<video id="v" autoplay muted playsinline style="max-width:100%"></video>
+<!doctype html><html><head>
+<style>
+  body { 
+    margin: 0; 
+    padding: 0; 
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+    background: #000;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .app {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  .heart-button {
+    width: 120px;
+    height: 120px;
+    border: none;
+    border-radius: 50%;
+    background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .heart-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 40px rgba(255, 107, 107, 0.5);
+  }
+
+  .heart-button:active {
+    transform: scale(0.95);
+  }
+
+  .heart-button.recording {
+    background: linear-gradient(45deg, #ff1744, #d50000);
+    animation: pulse 2s infinite;
+  }
+
+  .heart-button.starting {
+    background: linear-gradient(45deg, #ffab00, #ff6f00);
+  }
+
+  .heart {
+    font-size: 48px;
+    transition: all 0.3s ease;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+  }
+
+  .recording .heart {
+    animation: heartbeat 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0% { box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3); }
+    50% { box-shadow: 0 8px 32px rgba(255, 107, 107, 0.8); }
+    100% { box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3); }
+  }
+
+  @keyframes heartbeat {
+    0% { transform: scale(1); }
+    14% { transform: scale(1.1); }
+    28% { transform: scale(1); }
+    42% { transform: scale(1.1); }
+    70% { transform: scale(1); }
+  }
+
+  .heart-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    background: linear-gradient(45deg, rgba(255,255,255,0.2), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .heart-button:hover::before {
+    opacity: 1;
+  }
+</style>
+</head><body>
+<div class="app">
+  <button 
+    class="heart-button" 
+    id="toggle-recording"
+  >
+    <div class="heart">❤️</div>
+  </button>
+</div>
+
 <script>
-const v = document.getElementById('v'); const status = document.getElementById('status');
-let captureInterval = null;
-async function start() {
+const toggleButton = document.getElementById('toggle-recording');
+let isRecording = false;
+let isStarting = false;
+
+async function toggleRecording() {
+  if (isStarting) return;
+  
+  isStarting = true;
+  toggleButton.classList.add('starting');
+  
   try {
-    status.textContent = 'Starting audio recording...';
-    
-    // Start audio recording
-    const audioResult = await window.api.startAudio();
-    if (!audioResult.success) {
-      status.textContent = `Audio start failed: ${audioResult.message}`;
-      return;
+    if (!isRecording) {
+      await startAll();
+    } else {
+      await stopAll();
     }
-    
-    status.textContent = 'Starting video capture...';
-    
-    // Start video capture
+  } catch (error) {
+    console.error('Recording toggle failed:', error);
+  } finally {
+    isStarting = false;
+    toggleButton.classList.remove('starting');
+  }
+}
+
+async function startAll() {
+  await startAudio();
+  await startVision();
+}
+
+async function stopAll() {
+  await stopVision();
+  await stopAudio();
+}
+
+async function startVision() {
+  try {
     const sources = await window.api.getSources();
     const sourceId = sources[0].id;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ mandatory:{ chromeMediaSource:'desktop', chromeMediaSourceId: sourceId } } });
-    v.srcObject = stream;
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: false, 
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId } }
+    });
     
-    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
-    captureInterval = setInterval(() => {
-      if (!v.videoWidth) return;
-      canvas.width = v.videoWidth; canvas.height = v.videoHeight;
-      ctx.drawImage(v,0,0);
-      canvas.toBlob(async (blob)=> {
+    // Create hidden video element for capture
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.muted = true;
+    video.style.display = 'none';
+    document.body.appendChild(video);
+    
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    const captureInterval = setInterval(() => {
+      if (!video.videoWidth) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      canvas.toBlob(async (blob) => {
         const arr = new Uint8Array(await blob.arrayBuffer());
         window.api.sendFrame({ timestamp: Date.now(), jpgBuffer: arr });
-        status.textContent = `Recording - Last frame: ${new Date().toLocaleTimeString()}`;
       }, 'image/jpeg', 0.6);
-    }, 500); // ~2 fps
+    }, 500);
     
-    document.getElementById('start').disabled = true;
-    document.getElementById('stop').disabled = false;
-    status.textContent = 'Audio/Video recording started';
-    
-  } catch (error) {
-    status.textContent = `Start failed: ${error.message}`;
-    console.error('Start error:', error);
-  }
-}
-async function stop() {
-  try {
-    status.textContent = 'Stopping capture...';
-    
-    // Stop video capture
-    if (captureInterval) {
+    // Store for cleanup
+    window.visionCleanup = () => {
       clearInterval(captureInterval);
-      captureInterval = null;
-    }
-    if (v.srcObject) {
-      v.srcObject.getTracks().forEach(track => track.stop());
-      v.srcObject = null;
-    }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (video.parentNode) {
+        video.parentNode.removeChild(video);
+      }
+    };
     
-    // Stop audio recording
-    const audioResult = await window.api.stopAudio();
-    if (!audioResult.success) {
-      console.warn('Audio stop warning:', audioResult.message);
-    }
-    
-    document.getElementById('start').disabled = false;
-    document.getElementById('stop').disabled = true;
-    status.textContent = 'Audio/Video capture stopped';
+    isRecording = true;
+    updateUI();
     
   } catch (error) {
-    status.textContent = `Stop failed: ${error.message}`;
-    console.error('Stop error:', error);
+    console.error('Vision start error:', error);
   }
 }
-document.getElementById('start').onclick = start;
-document.getElementById('stop').onclick = stop;
-document.getElementById('bookmark').onclick = ()=> window.api.bookmark(prompt('Label?')||'Bookmark');
-document.getElementById('archive').onclick = async () => {
-  status.textContent = 'Checking sessions for archiving...';
-  const result = await window.api.archiveSessions();
-  status.textContent = result.success ? 'Archiving started (check console)' : `Archive failed: ${result.message}`;
-};
+
+async function stopVision() {
+  try {
+    if (window.visionCleanup) {
+      window.visionCleanup();
+      window.visionCleanup = null;
+    }
+    
+    isRecording = false;
+    updateUI();
+    
+  } catch (error) {
+    console.error('Vision stop error:', error);
+  }
+}
+
+async function startAudio() {
+  try {
+    const result = await window.api.startAudio();
+    console.log('Audio started:', result);
+  } catch (error) {
+    console.error('Audio start error:', error);
+  }
+}
+
+async function stopAudio() {
+  try {
+    const result = await window.api.stopAudio();
+    console.log('Audio stopped:', result);
+  } catch (error) {
+    console.error('Audio stop error:', error);
+  }
+}
+
+function updateUI() {
+  if (isRecording) {
+    toggleButton.classList.add('recording');
+  } else {
+    toggleButton.classList.remove('recording');
+  }
+}
+
+// Event listeners
+toggleButton.addEventListener('click', toggleRecording);
+
+// Initialize
+updateUI();
 </script>
 </body></html>
