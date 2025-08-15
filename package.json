@@ -10,6 +10,7 @@
     "asr": "bash -lc 'cd asr && source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate; pip install -q --upgrade pip && pip install -q flask sounddevice numpy faster-whisper pydub; python server.py'",
     "mcp:adapter": "node ./mcp-adapter/server.mjs",
     "archive": "node scripts/archive-sessions.js",
+    "discover": "node scripts/discover-sessions.js",
     "correlate": "node scripts/correlate-timeline.js",
     "enhance": "node scripts/enhance-metadata.js",
     "process-session": "npm run correlate && npm run enhance",

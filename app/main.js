@@ -2,11 +2,40 @@ const { app, BrowserWindow, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const sessionDir = path.join(__dirname, '..', 'sessions', new Date().toISOString().replace(/[:.]/g,'-'));
+const sessionTimestamp = new Date();
+const sessionDir = path.join(__dirname, '..', 'sessions', sessionTimestamp.toISOString().replace(/[:.]/g,'-'));
 fs.mkdirSync(path.join(sessionDir, 'frames'), { recursive: true });
-fs.writeFileSync(path.join(sessionDir,'meta.json'), JSON.stringify({ version:"0.1.0", session_dir: sessionDir, started_at: Date.now(), fps_baseline: 2 }, null, 2));
+
+// Enhanced metadata for date-based discovery and AI processing
+const sessionMetadata = {
+  version: "0.2.0",
+  session_id: path.basename(sessionDir),
+  session_dir: sessionDir,
+  created_at: sessionTimestamp.toISOString(),
+  created_timestamp: Date.now(),
+  created_date: sessionTimestamp.toISOString().split('T')[0], // YYYY-MM-DD
+  created_time: sessionTimestamp.toTimeString().split(' ')[0], // HH:MM:SS
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  purpose: "ai_app_building_capture",
+  capture_types: ["screen", "audio", "speech"],
+  status: "active",
+  fps_baseline: 2,
+  platform: process.platform,
+  electron_version: process.versions.electron,
+  node_version: process.versions.node
+};
+
+fs.writeFileSync(path.join(sessionDir,'meta.json'), JSON.stringify(sessionMetadata, null, 2));
 const eventsPath = path.join(sessionDir, 'events.ndjson');
+
 function appendEvent(o){ fs.appendFileSync(eventsPath, JSON.stringify(o)+"\n"); }
+
+function updateSessionMetadata(updates) {
+  const metaPath = path.join(sessionDir, 'meta.json');
+  const currentMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  const updatedMeta = { ...currentMeta, ...updates, last_updated: new Date().toISOString() };
+  fs.writeFileSync(metaPath, JSON.stringify(updatedMeta, null, 2));
+}
 
 // Audio recording process management
 let asrProcess = null;
@@ -20,16 +49,74 @@ async function createWindow() {
   await win.loadFile('index.html');
   win.webContents.openDevTools({ mode: 'undocked' });
 }
+// Cleanup function to finalize session metadata
+function finalizeSession() {
+  try {
+    const endTime = Date.now();
+    const totalDuration = lastFrameTime ? lastFrameTime - firstFrameTime : 0;
+    
+    updateSessionMetadata({
+      status: "completed",
+      ended_at: new Date().toISOString(),
+      ended_timestamp: endTime,
+      final_frame_count: frameCount,
+      total_duration_ms: totalDuration,
+      total_duration_readable: `${Math.floor(totalDuration / 60000)}:${String(Math.floor((totalDuration % 60000) / 1000)).padStart(2, '0')}`,
+      final_fps: frameCount > 0 && totalDuration > 0 ? frameCount / (totalDuration / 1000) : 0,
+      has_audio: fs.existsSync(path.join(sessionDir, 'audio')),
+      has_frames: frameCount > 0,
+      file_count: {
+        frames: frameCount,
+        audio_chunks: fs.existsSync(path.join(sessionDir, 'audio', 'chunks')) ? fs.readdirSync(path.join(sessionDir, 'audio', 'chunks')).length : 0
+      }
+    });
+    
+    console.log(`📊 Session finalized: ${frameCount} frames, ${Math.floor(totalDuration/1000)}s duration`);
+  } catch (error) {
+    console.error('Error finalizing session:', error);
+  }
+}
+
 app.whenReady().then(createWindow);
-app.on('window-all-closed', ()=> app.quit());
+app.on('window-all-closed', () => {
+  finalizeSession();
+  app.quit();
+});
+
+// Also finalize on process termination
+process.on('SIGTERM', finalizeSession);
+process.on('SIGINT', finalizeSession);
 ipcMain.handle('get-sources', async ()=> {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 }});
   return sources.map(s=>({ id: s.id, name: s.name }));
 });
+// Recording statistics
+let frameCount = 0;
+let firstFrameTime = null;
+let lastFrameTime = null;
+
 ipcMain.on('frame', (e, { timestamp, jpgBuffer }) => {
   const fn = path.join(sessionDir, 'frames', `${timestamp}.jpg`);
   fs.writeFileSync(fn, Buffer.from(jpgBuffer));
   appendEvent({ t: timestamp, etype: 'ui.frame', frame_id: `${timestamp}` });
+  
+  // Update recording statistics
+  frameCount++;
+  if (!firstFrameTime) firstFrameTime = timestamp;
+  lastFrameTime = timestamp;
+  
+  // Update session metadata every 50 frames to avoid excessive I/O
+  if (frameCount % 50 === 0) {
+    const duration = lastFrameTime - firstFrameTime;
+    updateSessionMetadata({
+      status: "recording",
+      frame_count: frameCount,
+      recording_duration_ms: duration,
+      recording_duration_readable: `${Math.floor(duration / 60000)}:${String(Math.floor((duration % 60000) / 1000)).padStart(2, '0')}`,
+      fps_actual: frameCount / (duration / 1000),
+      last_frame_time: new Date(lastFrameTime).toISOString()
+    });
+  }
 });
 ipcMain.on('bookmark', (e, label) => { appendEvent({ t: Date.now(), etype:'marker.bookmark', label }); });
 
